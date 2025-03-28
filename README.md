@@ -1,13 +1,16 @@
 # Setup Linux System
 
+## Base System
+- [ ] Base packages
+- [ ] dotfiles
+
 ## Apps
 - [x] NeoVIM
-- [ ] Zig Compiler
 - [ ] Ghostty
+    - [ ] Zig Compiler
 - [ ] Sway
-- [ ] Waybar
+    - [ ] Waybar
 - [ ] tmux
-
 
 ## Supported Distros
 - [x] Debian/Ubuntu
