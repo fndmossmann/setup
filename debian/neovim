@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+
+source $(dirname "${BASH_SOURCE[0]}")/../config.env
+
+printf "${INFO}[ INFO ]${ENDC} -- Setup NeoVIM \n"
+
+# Check for dependencies 
+PACKAGES=("ninja-build" "gettext" "cmake" "build-essential" "curl" "jq" "unzip" "wget")
+printf "${INFO}[ INFO ]${ENDC} Verifying missing dependencies.\n"
+DEPS=0
+for pkg in ${PACKAGES[@]}; do
+	if ! dpkg -s $pkg &>/dev/null; then
+		let "DEPS+=1"
+	fi
+done
+if [ $DEPS -gt 0 ]; then
+	printf "${INFO}[ INFO ]${ENDC} There are $DEPS missing dependecies. Going to install them...\n"
+	printf "${INFO}[ INFO ]${ENDC} Refreshing APT repositories...\n"
+	if sudo apt update -y &>/dev/null ; then
+		printf "${INFO}[ INFO ]${ENDC} APT repositories successfully refreshed.\n"
+	else
+		printf "${ERROR}[ ERROR ]${ENDC} Failed to refresh APT repositories.\n"
+		exit
+	fi
+
+	printf "${INFO}[ INFO ]${ENDC} Installing missing dependencies...\n"
+	if sudo apt install "${PACKAGES[@]}" -y &>/dev/null ; then
+		printf "${INFO}[ INFO ]${ENDC} Dependencies successfully installed.\n"
+	else
+		printf "${ERROR}[ ERROR ]${ENDC} Failed to install dependencies.\n"
+		exit
+	fi
+else
+	printf "${INFO}[ INFO ]${ENDC} All dependencies are already installed.\n"
+fi
+
+VERSION_LATEST=$(curl -s https://api.github.com/repos/neovim/neovim/releases/latest | jq -r .tag_name | cut -d'v' -f2)
+# SRC_DIR="$SRC_DIR/nvim/v$VERSION_LATEST"
+INSTALL_DIR="$INSTALL_DIR/nvim/v$VERSION_LATEST"
+
+
+# Function Definition
+_ver() { 
+	# From: https://www.baeldung.com/linux/compare-dot-separated-version-string
+	printf "%03d%03d%03d%03d" $(echo "$1" | tr '.' ' ');
+}
+
+# Function from: https://stackoverflow.com/questions/42283193/displaying-only-single-most-recent-line-of-a-commands-output/42284788#42284788
+shopt -s checkwinsize # ensure that COLUMNS is available w/ window size
+_oneline() {
+  local ws
+  while IFS= read -r line; do
+    if (( ${#line} >= COLUMNS )); then
+      # Moving cursor back to the front of the line so user input doesn't force wrapping
+      printf '\r%s\r' "${line:0:$COLUMNS}"
+    else
+      ws=$(( COLUMNS - ${#line} ))
+      # by writing each line twice, we move the cursor back to position
+      # thus: LF, content, whitespace, LF, content
+      printf '\r%s%*s\r%s' "$line" "$ws" " " "$line"
+    fi
+  done
+  echo
+}
+
+_install() {
+	# Installation procedure
+	if mkdir -p $INSTALL_DIR ; then
+		printf "${INFO}[ INFO ]${ENDC} Success creating directory: $INSTALL_DIR\n"
+	else
+		printf "${ERROR}[ ERROR ]${ENDC} Failed to create directory: $INSTALL_DIR\n"
+		exit
+	fi
+
+	if mkdir -p $SRC_DIR ; then
+		printf "${INFO}[ INFO ]${ENDC} Success creating directory: $SRC_DIR\n"
+	else
+		printf "${ERROR}[ ERROR ]${ENDC} Failed to create directory: $SRC_DIR\n"
+		exit
+	fi
+
+	printf "${INFO}[ INFO ]${ENDC} Downloading NeoVIM version $VERSION_LATEST\n"
+	#if curl -LJO --progress-bar https://github.com/neovim/neovim/archive/refs/tags/v$VERSION_LATEST.tar.gz --output-dir $SRC_DIR ; then
+	if wget -q --show-progress https://github.com/neovim/neovim/archive/refs/tags/v$VERSION_LATEST.tar.gz -P $SRC_DIR/ ; then
+		printf "${INFO}[ INFO ]${ENDC} Version $VERSION_LATEST downloaded successfully!\n"
+	else
+		printf "${ERROR}[ ERROR ]${ENDC} Failed to download the source code!\n"
+		exit
+	fi
+	
+	if tar -xf $SRC_DIR/v$VERSION_LATEST.tar.gz -C $SRC_DIR ; then
+		printf "${INFO}[ INFO ]${ENDC} Source code extrated successfully!\n"
+	else
+		printf "${ERROR}[ ERROR ]${ENDC} Failed to extract the source code!\n"
+		exit
+	fi
+
+	#mv $SRC_DIR/neovim-$VERSION_LATEST/* $SRC_DIR
+	#rm -rf $SRC_DIR/neovim-$VERSION_LATEST
+
+	# Change to src directory
+	cd $SRC_DIR/neovim-$VERSION_LATEST
+	printf "${INFO}[ INFO ]${ENDC} Starting the build process...\n"
+	sleep 5
+
+	if make CMAKE_BUILD_TYPE=Release 2>&1 | _oneline ; then
+		printf "${INFO}[ INFO ]${ENDC} Build finished successfully.\n"
+	else
+		printf "${ERROR}[ ERROR ]${ENDC} Failed to build. Aborting...\n"
+		exit
+	fi
+
+	printf "${INFO}[ INFO ]${ENDC} Starting the install process...\n"
+	sleep 5
+	if make CMAKE_INSTALL_PREFIX=$INSTALL_DIR install 2>&1 | _oneline ; then
+		printf "${INFO}[ INFO ]${ENDC} Installation successfully finished.\n"
+	else
+		printf "${ERROR}[ ERROR ]${ENDC} Failed to install version $VERSION_LATEST. Aborting...\n"
+		exit
+	fi
+	
+	# Add/update symlink to the latest version
+	if [ -e $INSTALL_DIR/bin/nvim ]; then
+		if ln -sf $INSTALL_DIR/bin/nvim $BIN_DIR/nvim ; then
+			printf "${INFO}[ INFO ]${ENDC} Symlink updated successfully!\n"
+		else
+			printf "${ERROR}[ ERRO ]${ENDC} Failed to update symlink!\n"
+			exit
+		fi
+	fi
+
+	VERSION_NEW_INSTALL=$($BIN_DIR/nvim -v | head -n 1 | cut -d'v' -f2)
+	if [ $(_ver $VERSION_LATEST) -eq $(_ver $VERSION_NEW_INSTALL) ]; then
+		printf "${INFO}[ INFO ]${ENDC} Congratulations! Version $VERSION_LATEST successfully installed!\n"
+		printf "${INFO}[ INFO ]${ENDC} Cleaning up...\n"
+		if rm -rf $SRC_DIR/neovim-$VERSION_LATEST* ; then
+			printf "${INFO}[ INFO ]${ENDC} Source files removed successfully.\n"
+		else
+			printf "${ERROR}[ ERROR ]${ENDC} Failed to remove source files. Need to remove them manually at $SRC_DIR/neovim-$VERSION_LATEST\n"
+		fi
+
+		# Check if $HOME/.local/bin is on PATH and warn the user
+		if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+			printf "${WARN}[ WARN ]${ENDC} Attention! \$HOME/.local/bin is not on PATH!\n"
+		fi
+	else
+		printf "${ERROR}[ ERROR ]${ENDC} Failed to install version $VERSION_LATEST!\n"
+	fi
+}
+
+
+# Remove NeoVim if it was installed via the system package manager
+if dpkg -s neovim &>/dev/null; then
+	printf "${WARN}[ WARN ]${ENDC} NeoVIM installation via package manager detected! Removing it.\n"
+	if sudo apt remove neovim -y &>/dev/null ; then
+		printf "${INFO}[ INFO ]${ENDC} NeoVIM package successfully removed.\n"
+	else
+		printf "${ERROR}[ ERROR ]${ENDC} Failted to remove NeoVIM package. Aborting...\n"
+		exit
+	fi
+fi
+
+# Remove VIM 
+if dpkg -s vim &>/dev/null; then
+	printf "${WARN}[ WARN ]${ENDC} VIM detected! Removing it.\n"
+	if sudo apt remove vim -y &>/dev/null ; then
+		printf "${INFO}[ INFO ]${ENDC} VIM successfully removed.\n"
+	else
+		printf "${WARN}[ WARN ]${ENDC} Failed to remove VIM. Ignoring it.\n"
+	fi
+fi
+
+# Check installation
+if [ -f $BIN_DIR/nvim ]; then
+	VERSION_INSTALLED=$($BIN_DIR/nvim -v | head -n 1 | cut -d'v' -f2)
+	if [ $(_ver $VERSION_LATEST) -gt $(_ver $VERSION_INSTALLED) ]; then
+		printf "${INFO}[ INFO ]${ENDC} New version available!\n"
+		printf "${INFO}[ INFO ]${ENDC} Performing update from v$VERSION_INSTALLED to v$VERSION_LATEST!\n"
+		
+		# Run installation procedure
+		_install
+		
+	elif [ $(_ver $VERSION_LATEST) -eq $(_ver $VERSION_INSTALLED) ]; then
+		printf "${INFO}[ INFO ]${ENDC} Awesome! Already on the latest version!\n"
+	fi
+else
+	# Run installation procedure
+	_install
+fi

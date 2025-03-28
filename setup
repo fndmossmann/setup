@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+source $(dirname "${BASH_SOURCE[0]}")/config.env
+source /etc/os-release
+
+if [ ! -d "$INSTALL_DIR" ]; then
+	mkdir -p $INSTALL_DIR
+fi
+
+if [ ! -d "$SRC_DIR" ]; then
+	mkdir -p $SRC_DIR
+fi
+
+if [ ! -d "$BIN_DIR" ]; then
+	mkdir -p $BIN_DIR
+fi
+
+script_dir=$(cd $(dirname "${BASH_SOURCE[0]}") && pwd)
+filter=""
+dry="0"
+
+while [[ $# > 0 ]]; do
+	if [[ $1 == "--dry-run" ]]; then
+		dry="1"
+	else
+		filter="$1"
+	fi
+	shift
+done
+
+log() {
+	if [[ $dry == "1" ]]; then
+		echo "[DRY_RUN] : $@"
+	else
+		echo "$@"
+	fi
+}
+
+execute() {
+	log "execute $@"
+	if [[ $dry == "1" ]]; then
+		return
+	fi
+
+	"$@"
+}
+
+log "$script_dir -- $filter"
+
+cd $script_dir
+scripts=$(find ./$ID/ -maxdepth 1 -mindepth 1 -executable -type f)
+
+for script in $scripts; do
+	if echo "$script" | grep -qv "$filter"; then
+		log "filtering $script"
+		continue
+	fi
+
+	execute ./$script
+
+done
+
+
+
+# Teste
