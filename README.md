@@ -1,9 +1,14 @@
 # Setup Linux System
 
 ## Apps
-- [x ] NeoVIM
-- [ ] Zig
+- [x] NeoVIM
+- [ ] Zig Compiler
+- [ ] Ghostty
+- [ ] Sway
+- [ ] Waybar
+- [ ] tmux
 
 
-## Distros
-- Debian/Ubuntu
+## Supported Distros
+- [x] Debian/Ubuntu
+- [ ] Fedora
