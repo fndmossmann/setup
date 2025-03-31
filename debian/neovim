@@ -133,7 +133,7 @@ _install() {
 	if [ $(_ver $VERSION_LATEST) -eq $(_ver $VERSION_NEW_INSTALL) ]; then
 		printf "${INFO} Congratulations! Version $VERSION_LATEST successfully installed!\n"
 		printf "${INFO} Cleaning up...\n"
-		if rm -rf $SRC_DIR/neovim-$VERSION_LATEST* ; then
+		if rm -rf $SRC_DIR/* ; then
 			printf "${INFO} Source files removed successfully.\n"
 		else
 			printf "${ERROR} Failed to remove source files. Need to remove them manually at $SRC_DIR/neovim-$VERSION_LATEST\n"
